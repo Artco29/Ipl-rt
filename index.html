@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>ERP RT - Sistem IPL</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2c3e50">
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+body{font-family:Arial;margin:0;background:#f2f4f7}
+nav{background:#2c3e50;color:#fff;padding:8px;display:flex;flex-wrap:wrap;gap:6px}
+nav button{background:#34495e;border:none;color:#fff;padding:6px 10px;border-radius:4px}
+section{display:none;padding:15px}
+section.active{display:block}
+input,select,button{padding:6px;margin:4px}
+table{width:100%;border-collapse:collapse;margin-top:10px}
+th,td{border:1px solid #ccc;padding:6px;font-size:13px}
+th{background:#eee}
+.lunas{color:green;font-weight:bold}
+.belum{color:red;font-weight:bold}
+.card{background:#fff;padding:10px;border-radius:6px;margin-bottom:10px}
+</style>
+</head>
+
+<body>
+
+<nav>
+<button onclick="show('dash')">Dashboard</button>
+<button onclick="show('warga')">Warga</button>
+<button onclick="show('ipl')">IPL</button>
+<button onclick="show('rekap')">Rekap</button>
+<button onclick="show('kas')">Kas</button>
+<button onclick="show('aduan')">Aduan</button>
+<button onclick="exportExcel()">Excel</button>
+<button onclick="exportPDF()">PDF</button>
+</nav>
+
+<section id="dash" class="active">
+<h3>Dashboard</h3>
+<div class="card">
+<p>Total Warga: <b id="dw"></b></p>
+<p>Lunas Bulan Ini: <b id="dl"></b></p>
+<p>Belum Bayar: <b id="db"></b></p>
+</div>
+<canvas id="grafik"></canvas>
+
+<div class="card">
+<h4>QRIS Pembayaran IPL</h4>
+<img src="qris.png" width="200">
+<p>Scan QRIS – Rp60.000</p>
+</div>
+</section>
+
+<section id="warga">
+<h3>Data Warga</h3>
+<input id="wn" placeholder="Nama">
+<input id="wa" placeholder="Alamat">
+<input id="wh" placeholder="No HP">
+<select id="ws"><option>Tetap</option><option>Kontrak</option></select>
+<button onclick="addWarga()">Tambah</button>
+<table>
+<thead><tr><th>Nama</th><th>Alamat</th><th>HP</th><th>Status</th></tr></thead>
+<tbody id="tw"></tbody>
+</table>
+</section>
+
+<section id="ipl">
+<h3>Pembayaran IPL</h3>
+<select id="pilihWarga"></select>
+<button onclick="bayar()">Bayar Rp60.000</button>
+<button onclick="kwitansi()">Kwitansi</button>
+<table>
+<thead><tr><th>Nama</th><th>Status</th><th>WA</th></tr></thead>
+<tbody id="tp"></tbody>
+</table>
+</section>
+
+<section id="rekap">
+<h3>Rekap IPL</h3>
+<select id="rbulan"></select>
+<input id="rtahun" type="number">
+<button onclick="rekap()">Tampilkan</button>
+<table>
+<thead><tr><th>Nama</th><th>Status IPL</th></tr></thead>
+<tbody id="trekap"></tbody>
+</table>
+</section>
+
+<section id="kas">
+<h3>Pengeluaran Kas</h3>
+<input id="kk" placeholder="Perbaikan / Token">
+<input id="kd" placeholder="Detail">
+<input id="kj" placeholder="Jumlah">
+<button onclick="addKas()">Tambah</button>
+<table>
+<thead><tr><th>Kegiatan</th><th>Detail</th><th>Jumlah</th></tr></thead>
+<tbody id="tk"></tbody>
+</table>
+</section>
+
+<section id="aduan">
+<h3>Aduan Warga</h3>
+<input id="an" placeholder="Nama">
+<input id="ai" placeholder="Isi Aduan">
+<button onclick="addAduan()">Kirim</button>
+<ul id="ta"></ul>
+</section>
+
+<script>
+const BIN_ID="https://api.jsonbin.io/v3/b/6986ea5ad0ea881f40a74e76";
+const API_KEY="$2a$10$cTSC16Mb5YGQgZIsuhGCOOeRbQx/P7HgIKFmnX7rng42.j7YZQYeq";
+const URL=`https://api.jsonbin.io/v3/b/${BIN_ID}`;
+
+let db={};
+const now=new Date();
+const bulan=now.getMonth()+1;
+const tahun=now.getFullYear();
+
+for(let i=1;i<=12;i++){
+rbulan.innerHTML+=`<option value="${i}">${i}</option>`;
+}
+rtahun.value=tahun;
+
+function show(id){
+document.querySelectorAll("section").forEach(s=>s.classList.remove("active"));
+document.getElementById(id).classList.add("active");
+}
+
+async function load(){
+let r=await fetch(URL,{headers:{"X-Master-Key":API_KEY}});
+db=(await r.json()).record;
+render();
+}
+
+async function save(){
+await fetch(URL,{
+method:"PUT",
+headers:{"Content-Type":"application/json","X-Master-Key":API_KEY},
+body:JSON.stringify(db)
+});
+render();
+}
+
+function statusIPL(nama,b,t){
+return db.pembayaran.some(p=>p.nama==nama && p.bulan==b && p.tahun==t);
+}
+
+function render(){
+tw.innerHTML=db.warga.map(w=>`<tr><td>${w.nama}</td><td>${w.alamat}</td><td>${w.hp}</td><td>${w.status}</td></tr>`).join("");
+pilihWarga.innerHTML=db.warga.map(w=>`<option>${w.nama}</option>`).join("");
+
+tp.innerHTML=db.warga.map(w=>{
+let s=statusIPL(w.nama,bulan,tahun);
+return `<tr>
+<td>${w.nama}</td>
+<td class="${s?'lunas':'belum'}">${s?'LUNAS':'BELUM'}</td>
+<td>${!s?`<button onclick="wa('${w.nama}','${w.hp}')">WA</button>`:''}</td>
+</tr>`;
+}).join("");
+
+dw.innerText=db.warga.length;
+dl.innerText=db.warga.filter(w=>statusIPL(w.nama,bulan,tahun)).length;
+db.innerText=db.warga.length-dl.innerText;
+
+renderChart();
+}
+
+function addWarga(){
+db.warga.push({nama:wn.value,alamat:wa.value,hp:wh.value,status:ws.value});
+save();
+}
+
+function bayar(){
+db.pembayaran.push({nama:pilihWarga.value,bulan,tahun});
+save();
+}
+
+function rekap(){
+trekap.innerHTML=db.warga.map(w=>{
+let s=statusIPL(w.nama,rbulan.value,rtahun.value);
+return `<tr><td>${w.nama}</td><td class="${s?'lunas':'belum'}">${s?'LUNAS':'BELUM'}</td></tr>`;
+}).join("");
+}
+
+function addKas(){
+db.pengeluaran.push({k:kk.value,d:kd.value,j:kj.value});
+save();
+}
+
+function addAduan(){
+db.aduan.push({n:an.value,i:ai.value});
+save();
+}
+
+function wa(n,h){
+let t=`Halo ${n}, IPL Rp60.000 bulan ini belum dibayar.`;
+window.open(`https://wa.me/62${h}?text=${encodeURIComponent(t)}`);
+}
+
+function renderChart(){
+new Chart(document.getElementById("grafik"),{
+type:"bar",
+data:{
+labels:["Lunas","Belum"],
+datasets:[{data:[dl.innerText,db.innerText]}]
+},
+options:{responsive:true}
+});
+}
+
+function exportExcel(){
+let ws=XLSX.utils.json_to_sheet(db.warga);
+let wb=XLSX.utils.book_new();
+XLSX.utils.book_append_sheet(wb,ws,"Warga");
+XLSX.writeFile(wb,"data_warga.xlsx");
+}
+
+function exportPDF(){
+const pdf=new jspdf.jsPDF();
+pdf.text("Laporan IPL RT",10,10);
+db.warga.forEach((w,i)=>{
+pdf.text(`${i+1}. ${w.nama}`,10,20+i*7);
+});
+pdf.save("laporan_ipl.pdf");
+}
+
+function kwitansi(){
+let n=pilihWarga.value;
+let pdf=new jspdf.jsPDF();
+pdf.text("KWITANSI PEMBAYARAN IPL",60,15);
+pdf.text(`Nama: ${n}`,10,40);
+pdf.text("Jumlah: Rp 60.000",10,50);
+pdf.text(`Tanggal: ${new Date().toLocaleDateString()}`,10,60);
+pdf.text("Bendahara RT",10,90);
+pdf.save(`kwitansi_${n}.pdf`);
+}
+
+load();
+</script>
+
+</body>
+</html>
